@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>exp</title>
+
+  <script src="jsPsych-6.1.0/jspsych.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-fullscreen.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-html-keyboard-response.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-html-button-response.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-survey-text.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-survey-likert.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-survey-multi-choice.js"></script>
+  <script src="jsPsych-6.1.0/plugins/jspsych-external-html.js"></script>
+
+  <script src="js/jspsych-html-slider-response_required.js"></script>
+  <script src="js/jquery.min.js"></script>
+  <script src="js/lodash.min.js"></script>
+  <script src="js/firebase.js"></script>
+
+  <link href="jsPsych-6.1.0/css/jspsych.css" rel="stylesheet" type="text/css">
+
+  <style>
+    body { cursor: default; }
+    #jspsych-html-slider-response-next { margin: 0px; }
+
+    /* IMPORTANT: ne pas mettre height:10000px, sinon le contenu peut partir hors écran */
+    .jspsych-content-wrapper{
+      width: 70%;
+      max-width: 1000px;
+      height: auto !important;
+      min-height: 100vh;
+      border: none !important;
+      box-shadow: none !important;
+      background: #ffffff !important;
+    }
+
+    /* Fond noir UNIQUEMENT pendant l’EAST */
+    body.east-black,
+    body.east-black #jspsych-target,
+    body.east-black .jspsych-display-element,
+    body.east-black #jspsych-content,
+    body.east-black .jspsych-content-wrapper {
+      background: black !important;
+      color: white !important;
+    }
+
+    /* Make the white area extend to the bottom of the screen (debrief + all non-EAST screens) */
+    html, body {
+      height: 100%;
+      background: #ffffff !important;
+    }
+    .jspsych-display-element,
+    #jspsych-target,
+    #jspsych-content,
+    .jspsych-content-wrapper {
+      background: #ffffff !important;
+    }
+  </style>
+</head>
+
+<body></body>
+
+<script>
+  /* Initial variables */
+  var timeline = [];
+  var preloadimages = [];
+  var prolificID = jsPsych.data.getURLVariable("PROLIFIC_PID");
+
+  /* -------------------- FIX: Firebase init + participant id ONCE -------------------- */
+  var firebaseConfig = {
+    apiKey: "AIzaSyAPTEPrT8V9T1-GouWXnW6jknK3brmagJs",
+    databaseURL: "https://postdocgent.firebaseio.com/"
+  };
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  var database = firebase.database();
+
+  // One stable ID for the session
+  var id = jsPsych.randomization.randomID(15);
+
+  // Add these properties BEFORE the experiment starts (applies to all trials)
+  jsPsych.data.addProperties({
+    prolificID: prolificID || null,
+    id: id
+  });
+
+  // List of traits
+  var List_traits = [
+    "popular","vain","healthy","shallow","boastful","sociable","ambitious","egoistic","intelligent","modest",
+    "honest","empathic","prudish","sensitive"
+  ];
+
+  var List_attractive = [
+    "attractive","beautiful","handsome","pretty","gorgeous"
+  ];
+
+  var List_other = [
+    "peaceful", "generous", "fascinating", "relaxed", "valuable"
+  ];
+
+  // EXPERIMENT --------------------------------------------------------------------------------------------------------
+
+  /* FULL SCREEN MODE */
+  var activeFullscreen = {
+    message: "",
+    button_label: "To start the study, please switch to fullscreen",
+    type: 'fullscreen',
+    fullscreen_mode: true,
+    delay_after: 200,
+  };
+
+  // Consent
+  var check_consent = function(elem) {
+    if (document.getElementById('info').checked
+      & document.getElementById('volunt').checked
+      & document.getElementById('anony').checked
+      & document.getElementById('end').checked
+      & document.getElementById('consqc').checked
+      & document.getElementById('summ').checked
+      & document.getElementById('participate').checked ) {
+      return true;
+    } else {
+      alert("If you wish to participate, you must check all the boxes.");
+      return false;
+    }
+  };
+
+  var consent = {
+    type:'external-html',
+    url: "https://marinerougier.github.io/east_study1/external_page_consent.html",
+    cont_btn: "start",
+    check_fn: check_consent
+  };
+
+  /* General INSTRUCTIONS */
+  var Instr_gene1 = {
+    type: "html-keyboard-response",
+    post_trial_gap: 300,
+    choices: [32],
+    stimulus: function() {
+      var html = "";
+      html += "<h1>Study on word categorization</h1>";
+      html += "<p class='justify'>In this study, we are interested in how fast and accurate people can be when they categorize words. ";
+      html += "In a word categorization task, you will <b>categorize words as a function of their meaning (i.e., whether words refer ";
+      html += "to people's attractiveness or to something else) or as a function of their color (i.e., blue or green). </b><br><br>";
+      html += "Please, try to be <b>as fast and as accurate as possible. </b></p>";
+      html += "<p><br>Press <span class='light-keys'><kbd>space</kbd></span> to continue</p>";
+      return html;
+    },
+  };
+
+  /* -------------------- EAST (unchanged task logic) -------------------- */
+
+  // ---------- SETTINGS ----------
+  var EAST_KEYS = { left: 'e', right: 'i' };      // participants press E and I
+  var EAST_KEYCODES = { left: 69, right: 73 };    // E=69, I=73
+  var EAST_COLORS = { blue: '#1e5bff', green: '#16a34a' };
+
+  function shuffle(a){ return jsPsych.randomization.shuffle(a); }
+
+  function ensureEastUI(){
+    if(!document.getElementById("east-stim-css")){
+      var style = document.createElement("style");
+      style.id = "east-stim-css";
+      style.innerHTML = `
+        body.east-black { cursor: none !important; }
+
+        body.east-black .jspsych-display-element,
+        body.east-black .jspsych-content-wrapper,
+        body.east-black #jspsych-content,
+        body.east-black #jspsych-target {
+          border: none !important;
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        body.east-black .jspsych-content-wrapper{
+          max-width: none !important;
+          width: 100% !important;
+        }
+
+        .east-trial-wrap{
+          width: 100%;
+          height: 180px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+        .east-word-zone{
+          height: 90px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .east-feedback-zone{
+          height: 70px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .east-word{
+          font-size: 56px;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+          line-height: 1;
+        }
+        .east-x{
+          font-size: 56px;
+          font-weight: 900;
+          color: #ff2d2d;
+          line-height: 1;
+        }
+        .east-fix{
+          font-size: 48px;
+          font-weight: 600;
+          line-height: 1;
+          color: white;
+        }
+
+        #east-footer{
+          position: fixed;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          height: 64px;
+          pointer-events: none;
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          padding: 0 24px 18px 24px;
+          z-index: 9999;
+        }
+        .east-footer-item{
+          font-size: 16px;
+          line-height: 1.2;
+          color: rgba(255,255,255,0.9);
+          background: rgba(0,0,0,0.35);
+          padding: 8px 10px;
+          border-radius: 10px;
+          max-width: 45%;
+        }
+        .east-footer-key{
+          display: inline-block;
+          min-width: 22px;
+          text-align: center;
+          font-weight: 800;
+          border: 1px solid rgba(255,255,255,0.35);
+          border-radius: 6px;
+          padding: 1px 6px;
+          margin-right: 8px;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    if(!document.getElementById("east-footer")){
+      var footer = document.createElement("div");
+      footer.id = "east-footer";
+      footer.innerHTML = `
+        <div class="east-footer-item" id="east-footer-left"></div>
+        <div class="east-footer-item" id="east-footer-right"></div>
+      `;
+      document.body.appendChild(footer);
+    }
+  }
+
+  function removeEastUI(){
+    var footer = document.getElementById("east-footer");
+    if(footer) footer.remove();
+  }
+
+  function setEastFooterLabels(leftHTML, rightHTML){
+    ensureEastUI();
+    var L = document.getElementById("east-footer-left");
+    var R = document.getElementById("east-footer-right");
+    if(L) L.innerHTML = leftHTML;
+    if(R) R.innerHTML = rightHTML;
+  }
+
+  function footerHTML(keyLetter, text){
+    return `<span class="east-footer-key">${keyLetter}</span>${text}`;
+  }
+
+  // ---------- BACKGROUND (EAST only) ----------
+  var east_bg_on = {
+    type: "html-keyboard-response",
+    stimulus: "",
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 1,
+    on_start: function(){
+      document.body.classList.add("east-black");
+      ensureEastUI();
+    },
+    data: { task: "EAST", phase: "bg_on" }
+  };
+
+  var east_bg_off = {
+    type: "html-keyboard-response",
+    stimulus: "",
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 1,
+    on_start: function(){
+      document.body.classList.remove("east-black");
+      removeEastUI();
+    },
+    data: { task: "EAST", phase: "bg_off" }
+  };
+
+  // ---------- COUNTERBALANCING ----------
+  var mapping = jsPsych.randomization.sampleWithoutReplacement([0,1], 1)[0];
+  var ATTR_KEYCODE   = (mapping === 0) ? EAST_KEYCODES.left : EAST_KEYCODES.right;
+  var OTHER_KEYCODE = (mapping === 0) ? EAST_KEYCODES.right : EAST_KEYCODES.left;
+
+  var BLUE_KEYCODE  = EAST_KEYCODES.left;
+  var GREEN_KEYCODE = EAST_KEYCODES.right;
+
+  function isCongruent(colorName){
+    var ck = (colorName === "blue") ? BLUE_KEYCODE : GREEN_KEYCODE;
+    return ck === ATTR_KEYCODE;
+  }
+
+  jsPsych.data.addProperties({
+    EAST_left_key: EAST_KEYS.left,
+    EAST_right_key: EAST_KEYS.right,
+    EAST_left_keycode: EAST_KEYCODES.left,
+    EAST_right_keycode: EAST_KEYCODES.right,
+    EAST_attr_keycode: ATTR_KEYCODE,
+    EAST_other_keycode: OTHER_KEYCODE,
+    EAST_blue_keycode: BLUE_KEYCODE,
+    EAST_green_keycode: GREEN_KEYCODE
+  });
+
+  // ---------- STIMULI ----------
+  var names = [];
+  List_attractive.forEach(function(w){
+    names.push({ word: w, category: "attractive", correct_key: ATTR_KEYCODE });
+  });
+  List_other.forEach(function(w){
+    names.push({ word: w, category: "other", correct_key: OTHER_KEYCODE });
+  });
+
+  var traits = List_traits.slice();
+  var N_TRAITS = traits.length;
+
+  // ---------- DISPLAY HELPERS ----------
+  function eastStimulusHTML(word, colorHex, showX){
+    var colorStyle = colorHex ? ("color:" + colorHex + ";") : "color:white;";
+    var xHTML = showX
+      ? "<div class='east-x'>✕</div>"
+      : "<div class='east-x' style='visibility:hidden;'>✕</div>";
+
+    return (
+      "<div class='east-trial-wrap'>" +
+        "<div class='east-word-zone'>" +
+          "<div class='east-word' style='" + colorStyle + "'>" + word + "</div>" +
+        "</div>" +
+        "<div class='east-feedback-zone'>" +
+          xHTML +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function eastFixationHTML(){
+    return (
+      "<div class='east-trial-wrap'>" +
+        "<div class='east-word-zone'>" +
+          "<div class='east-fix'>+</div>" +
+        "</div>" +
+        "<div class='east-feedback-zone'>" +
+          "<div class='east-x' style='visibility:hidden;'>✕</div>" +
+        "</div>" +
+      "</div>"
+    );
+  }
+
+  function introHTML(title, body){
+    return (
+      "<div style='width:900px; text-align:left;'>" +
+        "<h2 style='margin-bottom:10px;'>" + title + "</h2>" +
+        "<p style='font-size:18px; line-height:1.4;'>" + body + "</p>" +
+        "<p style='margin-top:18px;'>Press <kbd>space</kbd> to continue.</p>" +
+      "</div>"
+    );
+  }
+
+  // ---------- TIMING ----------
+  var fix = {
+    type: "html-keyboard-response",
+    stimulus: function(){ return eastFixationHTML(); },
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 500,
+    data: { task: "EAST", phase: "fix" }
+  };
+
+  var iti = {
+    type: "html-keyboard-response",
+    stimulus: "",
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 1500,
+    data: { task: "EAST", phase: "iti" }
+  };
+
+  // ---------- FORCED-CORRECT ----------
+  function forcedCorrectTrial(stimulusFn, baseData){
+    var showX = false;
+    var attempt = 0;
+
+    return {
+      timeline: [{
+        type: "html-keyboard-response",
+        choices: [EAST_KEYS.left, EAST_KEYS.right],
+        stimulus: function(){ return stimulusFn(showX); },
+        trial_duration: null,
+        data: function(){
+          var d = Object.assign({}, baseData);
+          d.attempt = attempt + 1;
+          d.show_x = showX ? 1 : 0;
+          return d;
+        },
+        on_finish: function(d){
+          d.correct = (d.key_press === d.correct_key);
+          showX = !d.correct;
+          attempt += 1;
+        }
+      }],
+      loop_function: function(loopData){
+        var vals = loopData.values();
+        var last = vals[vals.length - 1];
+        return !last.correct;
+      }
+    };
+  }
+
+  function nameTrial(stim, blockLabel){
+    var baseData = {
+      task: "EAST",
+      block: blockLabel,
+      phase: "trial",
+      stim_type: "name",
+      word: stim.word,
+      category: stim.category,
+      color: "white",
+      correct_key: stim.correct_key,
+      congruent: null
+    };
+
+    return forcedCorrectTrial(function(showX){
+      return eastStimulusHTML(stim.word, null, showX);
+    }, baseData);
+  }
+
+  function traitTrial(word, colorName, blockLabel){
+    var colorHex = (colorName === "blue") ? EAST_COLORS.blue : EAST_COLORS.green;
+    var ck = (colorName === "blue") ? BLUE_KEYCODE : GREEN_KEYCODE;
+
+    var baseData = {
+      task: "EAST",
+      block: blockLabel,
+      phase: "trial",
+      stim_type: "trait",
+      word: word,
+      category: null,
+      color: colorName,
+      correct_key: ck,
+      congruent: isCongruent(colorName)
+    };
+
+    return forcedCorrectTrial(function(showX){
+      return eastStimulusHTML(word, colorHex, showX);
+    }, baseData);
+  }
+
+  // ---------- FOOTER LABELS per block ----------
+  function footerForBlock1(){
+    var eMeans = (ATTR_KEYCODE === EAST_KEYCODES.left) ? "Attractive" : "Other";
+    var iMeans = (ATTR_KEYCODE === EAST_KEYCODES.left) ? "Other" : "Attractive";
+    setEastFooterLabels(
+      footerHTML("E", "Press E for <b>" + eMeans + "</b> words"),
+      footerHTML("I", "Press I for <b>" + iMeans + "</b> words")
+    );
+  }
+  function footerForBlock2(){
+    setEastFooterLabels(
+      footerHTML("E", "Press E for <b>Blue words</b>"),
+      footerHTML("I", "Press I for <b>Green words</b>")
+    );
+  }
+  function footerForBlock3(){
+    var eCat = (ATTR_KEYCODE === EAST_KEYCODES.left) ? "Attractive" : "Other";
+    var iCat = (ATTR_KEYCODE === EAST_KEYCODES.left) ? "Other" : "Attractive";
+    setEastFooterLabels(
+      footerHTML("E", "<b>" + eCat + "</b> words / <b>Blue words</b>"),
+      footerHTML("I", "<b>" + iCat + "</b> words / <b>Green words</b>")
+    );
+  }
+
+  var set_footer_b1 = {
+    type: "html-keyboard-response",
+    stimulus: "",
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 1,
+    on_start: footerForBlock1,
+    data: { task:"EAST", phase:"set_footer_b1" }
+  };
+  var set_footer_b2 = {
+    type: "html-keyboard-response",
+    stimulus: "",
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 1,
+    on_start: footerForBlock2,
+    data: { task:"EAST", phase:"set_footer_b2" }
+  };
+  var set_footer_b3 = {
+    type: "html-keyboard-response",
+    stimulus: "",
+    choices: jsPsych.NO_KEYS,
+    trial_duration: 1,
+    on_start: footerForBlock3,
+    data: { task:"EAST", phase:"set_footer_b3" }
+  };
+
+  // ---------- INSTRUCTIONS ----------
+  var east_intro = {
+    type: "html-keyboard-response",
+    choices: [32],
+    stimulus: introHTML(
+      "<center>Word categorization task</center>",
+      "You are about to start the task. <br><br>"+
+      "In this task, you will go through <b>three blocks </b>of categorization. It is crucial that you remain fully focused "+
+      " because <b>instructions will change from one block to another. </b><br><br>" +
+      "To categorize words, you will use these two keys:<br>" +
+      "• Left: <kbd>" + EAST_KEYS.left.toUpperCase() + "</kbd><br>" +
+      "• Right: <kbd>" + EAST_KEYS.right.toUpperCase() + "</kbd><br><br>" +
+      "Please try to respond as quickly and accurately as possible using the two response keys. If you make a mistake, you will see a red X and must correct your response to continue."
+    ),
+    data: { task:"EAST", phase:"intro" }
+  };
+
+  var instr_block1 = {
+    type: "html-keyboard-response",
+    choices: [32],
+    stimulus: function(){
+      var nTrials = names.length * 2;
+      var attrLetter   = (ATTR_KEYCODE === EAST_KEYCODES.left) ? "E" : "I";
+      var otherLetter = (OTHER_KEYCODE === EAST_KEYCODES.left) ? "E" : "I";
+      return introHTML(
+        "<center>Block 1: Category judgments</center>",
+        "In this block, words will appear in <b>white</b> at the center of the screen. These words will either be adjectives referring to <b>people's attractiveness (i.e., the Attractive category) or other adjectives (i.e., the Other category).</b> <br><br>" +
+        "• For adjectives referring to <b>people's attractiveness</b>, use the <kbd>" + attrLetter + "</kbd> key<br>" +
+        "• For <b>Other adjectives</b>, use the <kbd>" + otherLetter + "</kbd>key<br><br>" +
+        "In this block, you will go through <b>" + nTrials + " trials.</b>"
+      );
+    },
+    on_start: footerForBlock1,
+    data: { task:"EAST", phase:"instr_block1" }
+  };
+
+  var instr_block2 = {
+    type: "html-keyboard-response",
+    choices: [32],
+    stimulus: function(){
+      var nTrials = N_TRAITS * 2;
+      return introHTML(
+        "<center>Block 2: Color judgments</center>",
+        "In this block, words will appear in <b>blue</b> or <b>green</b>.<br>" +
+        "Your task will be to ignore the meaning of the words and to respond as a function of the word's <b>color</b>. Specifically:<br><br>" +
+        "• For words in <span style='color:" + EAST_COLORS.blue + "; font-weight:700;'>Blue</span>, use the <kbd>E</kbd> key<br>" +
+        "• For words in <span style='color:" + EAST_COLORS.green + "; font-weight:700;'>Green</span>, use the <kbd>I</kbd> key<br><br>" +
+        "In this block, you will go through <b>" + nTrials + " trials.</b>"
+      );
+    },
+    on_start: footerForBlock2,
+    data: { task:"EAST", phase:"instr_block2" }
+  };
+
+  var practiceN = 20;
+
+  var instr_block3 = {
+    type: "html-keyboard-response",
+    choices: [32],
+    stimulus: function(){
+      var nPractice = practiceN;
+      var nTest = 76;
+      var nTotal = nPractice + nTest;
+
+      return introHTML(
+        "<center>Block 3: Mixed judgments</center>",
+        "In this block, words will appear in <b>white</b>, <b>blue</b> or <b>green</b>.<br><br>" +
+        "• For <b>Attractive adjectives vs. Other adjectives</b> presented in white, use the key mapping of Block 1<br>" +
+        "• For the words in <b>Blue or Green</b>, use the key mapping of Block 2<br><br>" +
+        "In this block, you will go through a total of <b>" + nTotal + " trials.</b>"
+      );
+    },
+    on_start: footerForBlock3,
+    data: { task:"EAST", phase:"instr_block3" }
+  };
+
+  // ---------- BUILD BLOCKS ----------
+  var b1 = [];
+  var b1_items = [];
+  names.forEach(function(st){
+    b1_items.push(st);
+    b1_items.push(st); // each word appears twice
+  });
+
+  b1_items = shuffle(b1_items);
+  b1_items.forEach(function(st){
+    b1.push([fix, nameTrial(st, "b1_names"), iti]);
+  });
+  b1 = _.flattenDeep(b1);
+
+  var colors = [];
+  var nBlue = Math.ceil(N_TRAITS/2);
+  var nGreen = N_TRAITS - nBlue;
+  for(var i=0;i<nBlue;i++) colors.push("blue");
+  for(var j=0;j<nGreen;j++) colors.push("green");
+  colors = shuffle(colors);
+
+  var b2 = [];
+  var traits_shuf = shuffle(traits.slice());
+  traits_shuf.forEach(function(w){
+    b2.push([fix, traitTrial(w, "blue", "b2_colors"), iti]);
+    b2.push([fix, traitTrial(w, "green", "b2_colors"), iti]);
+  });
+  b2 = _.flattenDeep(shuffle(b2));
+
+  var pNamesN = Math.min(10, names.length);
+  var pTraitsN = Math.min(practiceN - pNamesN, N_TRAITS);
+
+  var practice_items = [];
+  shuffle(names.slice()).slice(0, pNamesN).forEach(function(st){
+    practice_items.push({type:"name", stim: st});
+  });
+  shuffle(traits.slice()).slice(0, pTraitsN).forEach(function(w){
+    practice_items.push({type:"trait", word: w, color: (Math.random()<0.5 ? "blue":"green")});
+  });
+  while(practice_items.length < practiceN){
+    practice_items.push({type:"name", stim: names[practice_items.length % names.length]});
+  }
+  practice_items = shuffle(practice_items);
+
+  var b3_practice = [];
+  practice_items.forEach(function(it){
+    if(it.type === "name"){
+      b3_practice.push([fix, nameTrial(it.stim, "b3_practice"), iti]);
+    } else {
+      b3_practice.push([fix, traitTrial(it.word, it.color, "b3_practice"), iti]);
+    }
+  });
+  b3_practice = _.flattenDeep(b3_practice);
+
+  var test_items = [];
+  /* Trait words: each word twice blue + twice green */
+  traits.forEach(function(w){
+    test_items.push({ stim_type: "trait", word: w, color: "blue" });
+    test_items.push({ stim_type: "trait", word: w, color: "blue" });
+    test_items.push({ stim_type: "trait", word: w, color: "green" });
+    test_items.push({ stim_type: "trait", word: w, color: "green" });
+  });
+  /* Category words: each word two times */
+  names.forEach(function(st){
+    test_items.push({ stim_type: "name", stim: st });
+    test_items.push({ stim_type: "name", stim: st });
+  });
+  test_items = shuffle(test_items);
+
+  var b3_test = [];
+  test_items.forEach(function(it){
+    if(it.stim_type === "trait"){
+      b3_test.push([fix, traitTrial(it.word, it.color, "b3_test"), iti]);
+    } else {
+      b3_test.push([fix, nameTrial(it.stim, "b3_test"), iti]);
+    }
+  });
+  b3_test = _.flattenDeep(b3_test);
+
+  // ---------- EAST TIMELINE ----------
+  var east_timeline = [];
+  east_timeline.push(east_bg_on);
+
+  east_timeline.push(east_intro);
+
+  east_timeline.push(set_footer_b1);
+  east_timeline.push(instr_block1);
+  east_timeline = east_timeline.concat(b1);
+
+  east_timeline.push(set_footer_b2);
+  east_timeline.push(instr_block2);
+  east_timeline = east_timeline.concat(b2);
+
+  east_timeline.push(set_footer_b3);
+  east_timeline.push(instr_block3);
+  east_timeline = east_timeline.concat(b3_practice);
+  east_timeline = east_timeline.concat(b3_test);
+
+  east_timeline.push({
+    type: "html-keyboard-response",
+    choices: [32],
+    stimulus: introHTML("End of the task", "You have completed the word categorization task."),
+    data: { task:"EAST", phase:"end" }
+  });
+
+  east_timeline.push(east_bg_off);
+
+  /* -------------------- DEMOGRAPHICS (FIX: add task tags so they export) -------------------- */
+
+  var age = {
+    timeline: [{
+      type: 'survey-text',
+      questions: [{prompt: "How old are you?", rows: 1, columns: 10}],
+      button_label: "Continue",
+      data: { task: "DEMOGRAPHICS", question: "age" }
+    }],
+    on_load: function() {
+      window.scrollTo(0, 0);
+      $(".jspsych-content").css("margin-top", "200px");
+      $(".jspsych-content").css("max-width", "90%");
+    },
+    loop_function: function(data){
+      var age = JSON.parse(data.values()[0].responses).Q0;
+      if(age == ""){
+        alert("Please indicate your age");
+        return true;
+      }
+    },
+    on_finish: function(data) {
+      jsPsych.data.addProperties({
+        age: JSON.parse(data.responses)["Q0"]
+      });
+    }
+  };
+
+  var gender = {
+    type: 'survey-multi-choice',
+    questions: [{prompt: "Please indicate your gender:", options: ['Male', 'Female', 'Other'], required: true}],
+    button_label: "Continue",
+    data: { task: "DEMOGRAPHICS", question: "gender" },
+    on_finish: function(data) {
+      jsPsych.data.addProperties({
+        gender: JSON.parse(data.responses)["Q0"]
+      });
+    }
+  };
+
+  var languageOptions = ['Native speaker', 'Very well', 'Well', 'Average', 'Badly', 'Very badly'];
+  var language = {
+    type: 'survey-multi-choice',
+    questions: [{ prompt: "How well do you speak english?", options: languageOptions, required: true }],
+    button_label: "continue",
+    data: { task: "DEMOGRAPHICS", question: "language" },
+    on_finish: function (data) {
+      jsPsych.data.addProperties({
+        language: JSON.parse(data.responses).Q0
+      });
+    }
+  };
+
+  var Prolific_reported = {
+    timeline: [{
+      type: 'survey-text',
+      questions: [{ prompt: 'Please indicate your Prolific ID:', rows: 3, columns: 60 }],
+      button_label: "continue",
+      data: { task: "DEMOGRAPHICS", question: "prolific_reported" }
+    }],
+    loop_function: function (data) {
+      var res = JSON.parse(data.values()[0].responses).Q0;
+      if (res == "") {
+        alert("Please answer the question");
+        return true;
+      }
+    },
+    on_finish: function (data) {
+      jsPsych.data.addProperties({
+        Prolific_reported: JSON.parse(data.responses).Q0
+      });
+    }
+  };
+
+  var comments = {
+    timeline: [{
+      type: 'survey-text',
+      questions: [{ prompt: 'Do you have comments regarding this study? [Optional]', rows: 3, columns: 60 }],
+      button_label: "continue",
+      data: { task: "DEMOGRAPHICS", question: "comments" }
+    }],
+    on_finish: function (data) {
+      jsPsych.data.addProperties({
+        Comment: JSON.parse(data.responses).Q0
+      });
+    }
+  };
+
+  /* EXIT FULLSCREEN MODE */
+  var exitFullscreen = {
+    type: 'fullscreen',
+    fullscreen_mode: false
+  };
+
+  /* DEBRIEF */
+  var debrief = [];
+  debrief += "<h1>End of the study</h1>";
+  debrief += "<p class='justify'>Thank you for participating in this study.<br><br>";
+  debrief += "In this experiment, you completed a categorization task in which you responded to words using two response keys. ";
+  debrief += "Some words referred to people described as physically attractive or referred to other adjectives. ";
+  debrief += "Your task was to categorize words either according to their meaning (attractive adjectives vs. other adjectives) or according to their color (blue vs. green), depending on the block.<br><br>";
+  debrief += "The goal of this research is to better understand how evaluative associations operate automatically. ";
+  debrief += "More specifically, we are interested in whether certain categories (for example, physically attractive vs. other people) ";
+  debrief += "are more easily associated with positive or negative attributes, and how quickly people can switch between meaning-based and color-based categorizations.<br><br>";
+  debrief += "Tasks such as the one you completed are commonly used to measure implicit or automatic components of social evaluation. ";
+  debrief += "Rather than asking directly about attitudes, these tasks examine patterns of reaction times and accuracy ";
+  debrief += "to understand how strongly different concepts may be linked in memory.<br><br>";
+  debrief += "At the beginning of the study, we did not fully explain this objective. ";
+  debrief += "This is because being aware of the precise research question can influence responses and reduce the validity of the measure. ";
+  debrief += "To ensure that responses reflected spontaneous processing, we provided only general instructions at first.<br><br>";
+  debrief += "Importantly, this task does not assess your personal beliefs or intentions in a direct way. ";
+  debrief += "Individual responses are not interpreted in isolation. ";
+  debrief += "All data are analyzed at the group level and remain completely anonymous.<br><br>";
+  debrief += "If you have any questions about this research, or if you would like your data to be withdrawn, ";
+  debrief += "please contact us via Prolific. You may also request a summary of the results once the study is complete ";
+  debrief += "(please note that data collection and analysis may take several weeks).<br><br>";
+  debrief += "To validate your participation on Prolific, please use the completion code below.<br><br>";
+  debrief += "Completion code: <b>CLJXJHVA</b><br><br>";
+  debrief += "<a href='https://app.prolific.com/submissions/complete?cc=CLJXJHVA' target='_blank'>Click here to complete your submission</a><br><br></p>";
+
+  // TIMELINE ----------------------------------------------------------------------------------------------------------
+  timeline.push(consent);
+  timeline.push(activeFullscreen);
+  timeline.push(Instr_gene1);
+  timeline.push(east_timeline);
+  timeline.push(age);
+  timeline.push(gender);
+  timeline.push(language);
+  timeline.push(Prolific_reported);
+  timeline.push(comments);
+  timeline.push(exitFullscreen);
+
+  timeline = _.flattenDeep(timeline);
+
+  // INITIALISE EXP ----------------------------------------------------------------------------------------------------
+  jsPsych.init({
+    timeline: timeline,
+    preload_images: preloadimages,
+    max_load_time: 500*1000,
+    exclusions: {},
+    on_finish: function() {
+      $("#jspsych-content").html("<img src='https://i.gifer.com/4V0b.gif'>");
+
+      // Add total time
+      jsPsych.data.addProperties({ totalTime: jsPsych.totalTime() });
+
+      // Export ONLY what you need: EAST + DEMOGRAPHICS
+      var clean = jsPsych.data.get().filterCustom(function(trial){
+        return trial.task === "EAST" || trial.task === "DEMOGRAPHICS";
+      });
+
+      var subdata = clean.csv();
+      var subdata_json = clean.json();
+
+      // Save to Firebase
+      database.ref("EAST_study2/" + id + "/").set({
+        meta: {
+          id: id,
+          prolificID: prolificID || null,
+          totalTime: jsPsych.totalTime()
+        },
+        subdata: subdata,
+        subdata_json: subdata_json
+      }).then(function() {
+        console.log("data sent!");
+        $("#jspsych-content").html(debrief);
+      }).catch(function(err){
+        console.error("Firebase error:", err);
+        $("#jspsych-content").html(debrief + "<p><b>Note:</b> We encountered a technical issue while saving. Please contact us via Prolific.</p>");
+      });
+    }
+  });
+</script>
+
+</html>

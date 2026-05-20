@@ -1,1 +1,1 @@
-# east_study2
+# Sim_SocGroups
